@@ -27,6 +27,11 @@ if (missingEnv.length > 0) {
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// OpenShift enruta el tráfico a través de HAProxy que añade X-Forwarded-For.
+// Sin esto express-rate-limit lanza ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
+// y rechaza todas las peticiones. El valor 1 indica un único proxy de confianza.
+app.set('trust proxy', 1);
+
 // ── Helmet: cabeceras de seguridad HTTP ─────────────────────────────────────
 // Añade X-Content-Type-Options, X-Frame-Options, HSTS, etc.
 app.use(helmet({
