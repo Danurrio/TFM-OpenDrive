@@ -267,7 +267,7 @@
 </template>
 
 <script>
-import { apiGet, apiPost, apiPatch, apiDelete, apiUpload } from '../api'
+import { apiGet, apiPost, apiPatch, apiDelete, apiUpload, API } from '../api'
 
 export default {
   data() {
@@ -537,7 +537,7 @@ export default {
       const headers = { 'Authorization': `Bearer ${token}` }
       if (csrfToken) headers['X-CSRF-Token'] = csrfToken
 
-      const res = await fetch(`${(await import('../api')).API}/archivos/descargar/${id}`, { headers })
+      const res = await fetch(`${API}/archivos/descargar/${id}`, { headers })
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')

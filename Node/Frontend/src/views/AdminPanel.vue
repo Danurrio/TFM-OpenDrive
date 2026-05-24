@@ -22,9 +22,9 @@
             <td>{{ u.email }}</td>
             <td>{{ u.nombre }} {{ u.apellido }}</td>
             <td>
-              <select 
-                v-if="puedeEditarRol(u.rol)" 
-                :value="u.rol" 
+              <select
+                v-if="puedeEditarRol(u.rol)"
+                :value="u.rol"
                 @change="cambiarRol(u.id, $event.target.value)">
                 <option value="usuario">usuario</option>
                 <option value="soporte" v-if="rolActual === 'superadmin' || rolActual === 'admin'">soporte</option>
@@ -39,19 +39,19 @@
               </span>
             </td>
             <td class="acciones">
-              <button 
+              <button
                 v-if="puedeDeshabilitarA(u.rol)"
                 @click="toggleActivo(u)"
                 :class="u.activo ? 'btn-danger' : 'btn-success'">
                 {{ u.activo ? 'Deshabilitar' : 'Habilitar' }}
               </button>
-              <button 
+              <button
                 v-if="puedeResetPassword()"
                 @click="forzarPassword(u.id)"
                 class="btn-warning">
                 Reset contraseña
               </button>
-              <button 
+              <button
                 v-if="rolActual === 'superadmin'"
                 @click="eliminarUsuario(u.id)"
                 class="btn-delete">
@@ -66,7 +66,7 @@
 </template>
 
 <script>
-const API = 'https://backend-opendrive.apps-crc.testing';
+import { apiGet, apiPatch, apiDelete } from '../api'
 
 export default {
   data() {
@@ -77,88 +77,65 @@ export default {
     }
   },
   mounted() {
-    this.cargarUsuarios();
+    this.cargarUsuarios()
   },
   methods: {
-    token() {
-      return localStorage.getItem('token');
-    },
-    headers() {
-      return {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.token()}`
-      };
-    },
     puedeEditarRol(rolObjetivo) {
-      if (this.rolActual === 'superadmin') return true;
-      if (this.rolActual === 'admin' && ['soporte', 'usuario'].includes(rolObjetivo)) return true;
-      return false;
+      if (this.rolActual === 'superadmin') return true
+      if (this.rolActual === 'admin' && ['soporte', 'usuario'].includes(rolObjetivo)) return true
+      return false
     },
     puedeDeshabilitarA(rolObjetivo) {
-      if (this.rolActual === 'superadmin') return true;
-      if (this.rolActual === 'admin' && ['soporte', 'usuario'].includes(rolObjetivo)) return true;
-      return false;
+      if (this.rolActual === 'superadmin') return true
+      if (this.rolActual === 'admin' && ['soporte', 'usuario'].includes(rolObjetivo)) return true
+      return false
     },
     puedeResetPassword() {
-      return ['superadmin', 'admin', 'soporte'].includes(this.rolActual);
+      return ['superadmin', 'admin', 'soporte'].includes(this.rolActual)
     },
     async cargarUsuarios() {
       try {
-        const res = await fetch(`${API}/admin/usuarios`, { headers: this.headers() });
-        this.usuarios = await res.json();
+        const res = await apiGet('/admin/usuarios')
+        this.usuarios = await res.json()
       } catch (err) {
-        console.error(err);
+        console.error(err)
       } finally {
-        this.cargando = false;
+        this.cargando = false
       }
     },
     async toggleActivo(usuario) {
       try {
-        const res = await fetch(`${API}/admin/usuarios/${usuario.id}/activo`, {
-          method: 'PATCH',
-          headers: this.headers(),
-          body: JSON.stringify({ activo: !usuario.activo })
-        });
+        const res = await apiPatch(`/admin/usuarios/${usuario.id}/activo`, { activo: !usuario.activo })
         if (res.ok) {
-          usuario.activo = !usuario.activo;
+          usuario.activo = !usuario.activo
         }
       } catch (err) {
-        console.error(err);
+        console.error(err)
       }
     },
     async forzarPassword(id) {
       try {
-        await fetch(`${API}/admin/usuarios/${id}/forzar-password`, {
-          method: 'PATCH',
-          headers: this.headers()
-        });
-        alert('Se ha forzado el cambio de contraseña');
+        await apiPatch(`/admin/usuarios/${id}/forzar-password`, {})
+        alert('Se ha forzado el cambio de contraseña')
       } catch (err) {
-        console.error(err);
+        console.error(err)
       }
     },
     async cambiarRol(id, rol_nombre) {
       try {
-        await fetch(`${API}/admin/usuarios/${id}/rol`, {
-          method: 'PATCH',
-          headers: this.headers(),
-          body: JSON.stringify({ rol_nombre })
-        });
-        await this.cargarUsuarios();
+        await apiPatch(`/admin/usuarios/${id}/rol`, { rol_nombre })
+        await this.cargarUsuarios()
       } catch (err) {
-        console.error(err);
+        console.error(err)
       }
     },
     async eliminarUsuario(id) {
-      if (!confirm('¿Seguro que quieres eliminar este usuario? Esta acción no se puede deshacer.')) return;
+      if (!confirm('¿Seguro que quieres eliminar este usuario? Esta acción no se puede deshacer.')) return
       try {
-        await fetch(`${API}/admin/usuarios/${id}`, {
-          method: 'DELETE',
-          headers: this.headers()
-        });
-        await this.cargarUsuarios();
+        await apiDelete(`/admin/usuarios/${id}`)
+        await this.cargarUsuarios()
       } catch (err) {
-        console.error(err);
+        console.error(err)
       }
     }
   }

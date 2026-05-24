@@ -1,15 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const path = require('path');
 const pool = require('../db');
 const { minioClient, BUCKET } = require('../minio');
-const { verificarToken } = require('../middleware/auth');
+const { verificarToken, verificarCsrf } = require('../middleware/auth');
 const { logUser } = require('../logger');
 const { encrypt, decrypt, streamToBuffer } = require('../crypto');
 
-const upload = multer({ storage: multer.memoryStorage() });
-
-
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } }); // límite 100 MB
 
 async function obtenerAcceso(bovedaId, usuarioId) {
   const creador = await pool.query(
@@ -32,58 +31,7 @@ async function obtenerAcceso(bovedaId, usuarioId) {
   return null;
 }
 
-// ─── BÓVEDAS ────────────────────────────────────────────────────────────────
-
-router.post('/crear', verificarToken, async (req, res) => {
-  const { nombre, descripcion, espacio_bytes } = req.body;
-
-  if (!nombre || !espacio_bytes) {
-    return res.status(400).json({ error: 'Nombre y espacio son obligatorios' });
-  }
-  if (espacio_bytes < 1024 * 1024) {
-    return res.status(400).json({ error: 'El espacio mínimo es 1 MB' });
-  }
-
-  try {
-    const cuota = await pool.query(
-      `SELECT almacen_id, cuota_maxima_bytes, espacio_usado_bytes
-       FROM usuario_almacen WHERE usuario_id = $1`,
-      [req.user.id]
-    );
-
-    if (cuota.rows.length === 0) {
-      return res.status(403).json({ error: 'No tienes almacén personal asignado' });
-    }
-
-    const { almacen_id } = cuota.rows[0];
-    const cuota_maxima_bytes = parseInt(cuota.rows[0].cuota_maxima_bytes);
-    const espacio_usado_bytes = parseInt(cuota.rows[0].espacio_usado_bytes);
-    const libre = cuota_maxima_bytes - espacio_usado_bytes;
-
-    if (espacio_bytes > libre) {
-      return res.status(400).json({
-        error: `No tienes suficiente espacio libre. Disponible: ${(libre / 1048576).toFixed(2)} MB`
-      });
-    }
-
-    await pool.query(
-      `UPDATE usuario_almacen SET espacio_usado_bytes = espacio_usado_bytes + $1
-       WHERE usuario_id = $2 AND almacen_id = $3`,
-      [espacio_bytes, req.user.id, almacen_id]
-    );
-
-    const boveda = await pool.query(
-      `INSERT INTO bovedas (nombre, descripcion, creador_id, espacio_total_bytes)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [nombre, descripcion || null, req.user.id, espacio_bytes]
-    );
-
-    await logUser(req.user.id, 'CREAR_BOVEDA', `Bóveda: ${nombre}`, req.ip);
-    res.status(201).json({ message: 'Bóveda creada', boveda: boveda.rows[0] });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// ── GET — solo lectura, sin CSRF ─────────────────────────────────────────────
 
 router.get('/mias', verificarToken, async (req, res) => {
   try {
@@ -140,34 +88,6 @@ router.get('/:id', verificarToken, async (req, res) => {
   }
 });
 
-router.delete('/:id', verificarToken, async (req, res) => {
-  try {
-    const boveda = await pool.query(
-      `SELECT * FROM bovedas WHERE id = $1 AND creador_id = $2`,
-      [req.params.id, req.user.id]
-    );
-    if (boveda.rows.length === 0) {
-      return res.status(403).json({ error: 'No tienes permiso para eliminar esta bóveda' });
-    }
-
-    const { espacio_total_bytes } = boveda.rows[0];
-
-    await pool.query(
-      `UPDATE usuario_almacen SET espacio_usado_bytes = espacio_usado_bytes - $1
-       WHERE usuario_id = $2`,
-      [espacio_total_bytes, req.user.id]
-    );
-
-    await pool.query(`DELETE FROM bovedas WHERE id = $1`, [req.params.id]);
-    await logUser(req.user.id, 'ELIMINAR_BOVEDA', `Bóveda ID: ${req.params.id}`, req.ip);
-    res.json({ message: 'Bóveda eliminada y espacio recuperado' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── MIEMBROS ───────────────────────────────────────────────────────────────
-
 router.get('/:id/miembros', verificarToken, async (req, res) => {
   const acceso = await obtenerAcceso(req.params.id, req.user.id);
   if (!acceso) return res.status(403).json({ error: 'Sin acceso a esta bóveda' });
@@ -187,7 +107,109 @@ router.get('/:id/miembros', verificarToken, async (req, res) => {
   }
 });
 
-router.post('/:id/miembros', verificarToken, async (req, res) => {
+router.get('/:id/archivos', verificarToken, async (req, res) => {
+  const acceso = await obtenerAcceso(req.params.id, req.user.id);
+  if (!acceso || !acceso.puede_leer) return res.status(403).json({ error: 'Sin permiso de lectura' });
+
+  const { carpeta_id } = req.query;
+
+  try {
+    const result = await pool.query(
+      `SELECT a.id, a.nombre, a.tipo, a.tamanio_bytes, a.creado_en, u.username as subido_por
+       FROM archivos a
+       JOIN usuarios u ON a.propietario_id = u.id
+       WHERE a.boveda_id = $1
+         AND a.eliminado = false
+         AND a.carpeta_id IS NOT DISTINCT FROM $2
+       ORDER BY a.creado_en DESC`,
+      [req.params.id, carpeta_id || null]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/:id/archivos/:fid/descargar', verificarToken, async (req, res) => {
+  const acceso = await obtenerAcceso(req.params.id, req.user.id);
+  if (!acceso || !acceso.puede_leer) return res.status(403).json({ error: 'Sin permiso de lectura' });
+
+  try {
+    const result = await pool.query(
+      `SELECT * FROM archivos WHERE id = $1 AND boveda_id = $2 AND eliminado = false`,
+      [req.params.fid, req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Archivo no encontrado' });
+
+    const archivo = result.rows[0];
+    const stream = await minioClient.getObject(BUCKET, archivo.nombre_objeto);
+    const encryptedBuffer = await streamToBuffer(stream);
+    const decryptedBuffer = decrypt(encryptedBuffer);
+
+    res.setHeader('Content-Disposition', `attachment; filename="${archivo.nombre}"`);
+    res.setHeader('Content-Type', archivo.tipo);
+    res.setHeader('Content-Length', decryptedBuffer.length);
+    await logUser(req.user.id, 'DESCARGAR_ARCHIVO_BOVEDA', `Archivo: ${archivo.nombre}`, req.ip);
+    res.send(decryptedBuffer);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST mutantes — requieren CSRF ────────────────────────────────────────────
+
+router.post('/crear', verificarToken, verificarCsrf, async (req, res) => {
+  const { nombre, descripcion, espacio_bytes } = req.body;
+
+  if (!nombre || !espacio_bytes) {
+    return res.status(400).json({ error: 'Nombre y espacio son obligatorios' });
+  }
+  if (espacio_bytes < 1024 * 1024) {
+    return res.status(400).json({ error: 'El espacio mínimo es 1 MB' });
+  }
+
+  try {
+    const cuota = await pool.query(
+      `SELECT almacen_id, cuota_maxima_bytes, espacio_usado_bytes
+       FROM usuario_almacen WHERE usuario_id = $1`,
+      [req.user.id]
+    );
+
+    if (cuota.rows.length === 0) {
+      return res.status(403).json({ error: 'No tienes almacén personal asignado' });
+    }
+
+    const { almacen_id } = cuota.rows[0];
+    const cuota_maxima_bytes = parseInt(cuota.rows[0].cuota_maxima_bytes);
+    const espacio_usado_bytes = parseInt(cuota.rows[0].espacio_usado_bytes);
+    const libre = cuota_maxima_bytes - espacio_usado_bytes;
+
+    if (espacio_bytes > libre) {
+      return res.status(400).json({
+        error: `No tienes suficiente espacio libre. Disponible: ${(libre / 1048576).toFixed(2)} MB`
+      });
+    }
+
+    await pool.query(
+      `UPDATE usuario_almacen SET espacio_usado_bytes = espacio_usado_bytes + $1
+       WHERE usuario_id = $2 AND almacen_id = $3`,
+      [espacio_bytes, req.user.id, almacen_id]
+    );
+
+    const boveda = await pool.query(
+      `INSERT INTO bovedas (nombre, descripcion, creador_id, espacio_total_bytes)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [nombre, descripcion || null, req.user.id, espacio_bytes]
+    );
+
+    await logUser(req.user.id, 'CREAR_BOVEDA', `Bóveda: ${nombre}`, req.ip);
+    res.status(201).json({ message: 'Bóveda creada', boveda: boveda.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/miembros', verificarToken, verificarCsrf, async (req, res) => {
   const acceso = await obtenerAcceso(req.params.id, req.user.id);
   if (!acceso) return res.status(403).json({ error: 'Sin acceso a esta bóveda' });
   if (!acceso.esCreador && !acceso.puede_gestionar) {
@@ -239,7 +261,68 @@ router.post('/:id/miembros', verificarToken, async (req, res) => {
   }
 });
 
-router.patch('/:id/miembros/:uid/permisos', verificarToken, async (req, res) => {
+router.post('/:id/archivos/subir', verificarToken, verificarCsrf, upload.single('archivo'), async (req, res) => {
+  const acceso = await obtenerAcceso(req.params.id, req.user.id);
+  if (!acceso || !acceso.puede_subir) return res.status(403).json({ error: 'Sin permiso de subida' });
+
+  if (!req.file) return res.status(400).json({ error: 'No se ha enviado ningún archivo' });
+
+  const { originalname, mimetype, buffer, size } = req.file;
+  const carpeta_id = req.body.carpeta_id || null;
+
+  // Sanitizar nombre de archivo
+  const nombreSeguro = path.basename(originalname).replace(/[^a-zA-Z0-9._\- ]/g, '_');
+  const nombreObjeto = `bovedas/${req.params.id}/${Date.now()}-${nombreSeguro}`;
+
+  try {
+    const boveda = await pool.query(
+      `SELECT espacio_total_bytes, espacio_usado_bytes FROM bovedas WHERE id = $1`,
+      [req.params.id]
+    );
+    const espacio_total_bytes = parseInt(boveda.rows[0].espacio_total_bytes);
+    const espacio_usado_bytes = parseInt(boveda.rows[0].espacio_usado_bytes);
+    if (espacio_usado_bytes + size > espacio_total_bytes) {
+      return res.status(400).json({
+        error: `La bóveda no tiene espacio suficiente. Disponible: ${((espacio_total_bytes - espacio_usado_bytes) / 1048576).toFixed(2)} MB`
+      });
+    }
+
+    if (carpeta_id) {
+      const carpeta = await pool.query(
+        `SELECT id FROM carpetas WHERE id = $1 AND boveda_id = $2`,
+        [carpeta_id, req.params.id]
+      );
+      if (carpeta.rows.length === 0) {
+        return res.status(404).json({ error: 'Carpeta no encontrada en esta bóveda' });
+      }
+    }
+
+    const encryptedBuffer = encrypt(buffer);
+    await minioClient.putObject(BUCKET, nombreObjeto, encryptedBuffer, encryptedBuffer.length, {
+      'Content-Type': 'application/octet-stream'
+    });
+
+    const result = await pool.query(
+      `INSERT INTO archivos (nombre, nombre_objeto, tipo, tamanio_bytes, propietario_id, boveda_id, carpeta_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, nombre, tipo, tamanio_bytes, creado_en`,
+      [nombreSeguro, nombreObjeto, mimetype, size, req.user.id, req.params.id, carpeta_id]
+    );
+
+    await pool.query(
+      `UPDATE bovedas SET espacio_usado_bytes = espacio_usado_bytes + $1 WHERE id = $2`,
+      [size, req.params.id]
+    );
+
+    await logUser(req.user.id, 'SUBIR_ARCHIVO_BOVEDA', `Archivo: ${nombreSeguro} en bóveda ${req.params.id}`, req.ip);
+    res.status(201).json({ message: 'Archivo subido', archivo: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PATCH mutante — requiere CSRF ─────────────────────────────────────────────
+
+router.patch('/:id/miembros/:uid/permisos', verificarToken, verificarCsrf, async (req, res) => {
   const acceso = await obtenerAcceso(req.params.id, req.user.id);
   if (!acceso) return res.status(403).json({ error: 'Sin acceso a esta bóveda' });
   if (!acceso.esCreador && !acceso.puede_gestionar) {
@@ -277,7 +360,35 @@ router.patch('/:id/miembros/:uid/permisos', verificarToken, async (req, res) => 
   }
 });
 
-router.delete('/:id/miembros/:uid', verificarToken, async (req, res) => {
+// ── DELETE mutantes — requieren CSRF ─────────────────────────────────────────
+
+router.delete('/:id', verificarToken, verificarCsrf, async (req, res) => {
+  try {
+    const boveda = await pool.query(
+      `SELECT * FROM bovedas WHERE id = $1 AND creador_id = $2`,
+      [req.params.id, req.user.id]
+    );
+    if (boveda.rows.length === 0) {
+      return res.status(403).json({ error: 'No tienes permiso para eliminar esta bóveda' });
+    }
+
+    const { espacio_total_bytes } = boveda.rows[0];
+
+    await pool.query(
+      `UPDATE usuario_almacen SET espacio_usado_bytes = espacio_usado_bytes - $1
+       WHERE usuario_id = $2`,
+      [espacio_total_bytes, req.user.id]
+    );
+
+    await pool.query(`DELETE FROM bovedas WHERE id = $1`, [req.params.id]);
+    await logUser(req.user.id, 'ELIMINAR_BOVEDA', `Bóveda ID: ${req.params.id}`, req.ip);
+    res.json({ message: 'Bóveda eliminada y espacio recuperado' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id/miembros/:uid', verificarToken, verificarCsrf, async (req, res) => {
   const acceso = await obtenerAcceso(req.params.id, req.user.id);
   if (!acceso) return res.status(403).json({ error: 'Sin acceso a esta bóveda' });
   if (!acceso.esCreador && !acceso.puede_gestionar) {
@@ -312,122 +423,7 @@ router.delete('/:id/miembros/:uid', verificarToken, async (req, res) => {
   }
 });
 
-// ─── ARCHIVOS DE BÓVEDA ─────────────────────────────────────────────────────
-
-// Listar archivos — FIX: se pasaba $2 en la query pero solo 1 parámetro al driver
-router.get('/:id/archivos', verificarToken, async (req, res) => {
-  const acceso = await obtenerAcceso(req.params.id, req.user.id);
-  if (!acceso || !acceso.puede_leer) return res.status(403).json({ error: 'Sin permiso de lectura' });
-
-  const { carpeta_id } = req.query;
-
-  try {
-    const result = await pool.query(
-      `SELECT a.id, a.nombre, a.tipo, a.tamanio_bytes, a.creado_en, u.username as subido_por
-       FROM archivos a
-       JOIN usuarios u ON a.propietario_id = u.id
-       WHERE a.boveda_id = $1
-         AND a.eliminado = false
-         AND a.carpeta_id IS NOT DISTINCT FROM $2
-       ORDER BY a.creado_en DESC`,
-      [req.params.id, carpeta_id || null]   // ← FIX: ahora se pasan ambos parámetros
-    );
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Subir archivo a bóveda — añadido soporte carpeta_id
-router.post('/:id/archivos/subir', verificarToken, upload.single('archivo'), async (req, res) => {
-  const acceso = await obtenerAcceso(req.params.id, req.user.id);
-  if (!acceso || !acceso.puede_subir) return res.status(403).json({ error: 'Sin permiso de subida' });
-
-  if (!req.file) return res.status(400).json({ error: 'No se ha enviado ningún archivo' });
-
-  const { originalname, mimetype, buffer, size } = req.file;
-  const carpeta_id = req.body.carpeta_id || null;  // ← NUEVO
-
-  try {
-    const boveda = await pool.query(
-      `SELECT espacio_total_bytes, espacio_usado_bytes FROM bovedas WHERE id = $1`,
-      [req.params.id]
-    );
-    const espacio_total_bytes = parseInt(boveda.rows[0].espacio_total_bytes);
-    const espacio_usado_bytes = parseInt(boveda.rows[0].espacio_usado_bytes);
-    if (espacio_usado_bytes + size > espacio_total_bytes) {
-      return res.status(400).json({
-        error: `La bóveda no tiene espacio suficiente. Disponible: ${((espacio_total_bytes - espacio_usado_bytes) / 1048576).toFixed(2)} MB`
-      });
-    }
-
-    // Si se especifica carpeta, verificar que pertenece a esta bóveda
-    if (carpeta_id) {
-      const carpeta = await pool.query(
-        `SELECT id FROM carpetas WHERE id = $1 AND boveda_id = $2`,
-        [carpeta_id, req.params.id]
-      );
-      if (carpeta.rows.length === 0) {
-        return res.status(404).json({ error: 'Carpeta no encontrada en esta bóveda' });
-      }
-    }
-
-    const nombreObjeto = `bovedas/${req.params.id}/${Date.now()}-${originalname}`;
-
-    // ── Cifrar antes de subir a MinIO ──
-    const encryptedBuffer = encrypt(buffer);
-    await minioClient.putObject(BUCKET, nombreObjeto, encryptedBuffer, encryptedBuffer.length, {
-      'Content-Type': 'application/octet-stream'
-    });
-
-    // En BD guardamos el tamaño original (no cifrado) para la cuota
-    const result = await pool.query(
-      `INSERT INTO archivos (nombre, nombre_objeto, tipo, tamanio_bytes, propietario_id, boveda_id, carpeta_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, nombre, tipo, tamanio_bytes, creado_en`,
-      [originalname, nombreObjeto, mimetype, size, req.user.id, req.params.id, carpeta_id]
-    );
-
-    await pool.query(
-      `UPDATE bovedas SET espacio_usado_bytes = espacio_usado_bytes + $1 WHERE id = $2`,
-      [size, req.params.id]
-    );
-
-    await logUser(req.user.id, 'SUBIR_ARCHIVO_BOVEDA', `Archivo: ${originalname} en bóveda ${req.params.id}`, req.ip);
-    res.status(201).json({ message: 'Archivo subido', archivo: result.rows[0] });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.get('/:id/archivos/:fid/descargar', verificarToken, async (req, res) => {
-  const acceso = await obtenerAcceso(req.params.id, req.user.id);
-  if (!acceso || !acceso.puede_leer) return res.status(403).json({ error: 'Sin permiso de lectura' });
-
-  try {
-    const result = await pool.query(
-      `SELECT * FROM archivos WHERE id = $1 AND boveda_id = $2 AND eliminado = false`,
-      [req.params.fid, req.params.id]
-    );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Archivo no encontrado' });
-
-    const archivo = result.rows[0];
-
-    // ── Leer stream cifrado de MinIO, descifrar y enviar ──
-    const stream = await minioClient.getObject(BUCKET, archivo.nombre_objeto);
-    const encryptedBuffer = await streamToBuffer(stream);
-    const decryptedBuffer = decrypt(encryptedBuffer);
-
-    res.setHeader('Content-Disposition', `attachment; filename="${archivo.nombre}"`);
-    res.setHeader('Content-Type', archivo.tipo);
-    res.setHeader('Content-Length', decryptedBuffer.length);
-    await logUser(req.user.id, 'DESCARGAR_ARCHIVO_BOVEDA', `Archivo: ${archivo.nombre}`, req.ip);
-    res.send(decryptedBuffer);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.delete('/:id/archivos/:fid', verificarToken, async (req, res) => {
+router.delete('/:id/archivos/:fid', verificarToken, verificarCsrf, async (req, res) => {
   const acceso = await obtenerAcceso(req.params.id, req.user.id);
   if (!acceso || !acceso.puede_borrar) return res.status(403).json({ error: 'Sin permiso de borrado' });
 

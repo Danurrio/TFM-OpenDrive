@@ -39,7 +39,6 @@
       </tbody>
     </table>
 
-    <!-- Paginación -->
     <div v-if="total > limit" class="paginacion">
       <button :disabled="page === 1" @click="page--; cargar()">← Anterior</button>
       <span>Página {{ page }} de {{ Math.ceil(total / limit) }} · {{ total }} entradas</span>
@@ -49,7 +48,7 @@
 </template>
 
 <script>
-const API = 'https://backend-opendrive.apps-crc.testing';
+import { apiGet } from '../api'
 
 export default {
   data() {
@@ -63,31 +62,25 @@ export default {
     }
   },
   mounted() {
-    this.cargar();
+    this.cargar()
   },
   methods: {
-    headers() {
-      return {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      };
-    },
     async cargar(resetPage = false) {
-      if (resetPage) this.page = 1;
-      this.cargando = true;
+      if (resetPage) this.page = 1
+      this.cargando = true
       try {
-        const res = await fetch(`${API}/logs/${this.tab}?page=${this.page}&limit=${this.limit}`, { headers: this.headers() });
-        const data = await res.json();
-        this.logs = data.logs || [];
-        this.total = data.total || 0;
+        const res = await apiGet(`/logs/${this.tab}?page=${this.page}&limit=${this.limit}`)
+        const data = await res.json()
+        this.logs = data.logs || []
+        this.total = data.total || 0
       } catch (err) {
-        console.error(err);
+        console.error(err)
       } finally {
-        this.cargando = false;
+        this.cargando = false
       }
     },
     formatFecha(fecha) {
-      return new Date(fecha).toLocaleString('es-ES');
+      return new Date(fecha).toLocaleString('es-ES')
     }
   }
 }

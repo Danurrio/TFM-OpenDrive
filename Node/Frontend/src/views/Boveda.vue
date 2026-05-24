@@ -15,7 +15,6 @@
         </button>
       </nav>
 
-      <!-- Info de la bóveda -->
       <div class="espacio-box" v-if="boveda">
         <p class="espacio-label">{{ boveda.nombre }}</p>
         <div class="barra-fondo">
@@ -40,7 +39,6 @@
           <div class="main-header">
             <div class="header-left">
               <h2>📂 {{ boveda.nombre }}</h2>
-              <!-- Breadcrumb -->
               <div v-if="breadcrumb.length > 0" class="breadcrumb">
                 <span class="breadcrumb-item" @click="irARaiz()">📂 Raíz</span>
                 <template v-for="(crumb, i) in breadcrumb" :key="crumb.id">
@@ -65,16 +63,13 @@
             </div>
           </div>
 
-          <!-- Botón volver un nivel -->
           <div v-if="carpetaActualId" class="btn-volver-wrap">
             <button class="btn-volver" @click="subirNivel()">← Volver</button>
           </div>
 
           <p v-if="errorArchivo" class="notificacion error">{{ errorArchivo }}</p>
 
-          <!-- Listado: carpetas + archivos -->
           <div class="lista-archivos">
-            <!-- Carpetas -->
             <div
               class="archivo-fila carpeta-fila"
               v-for="carpeta in carpetas"
@@ -83,7 +78,6 @@
               <span>📂 {{ carpeta.nombre }}</span>
               <div style="display:flex;gap:0.5rem;align-items:center;">
                 <span class="archivo-fecha">Carpeta</span>
-                <!-- Botón permisos: solo creador/gestor -->
                 <button
                   v-if="acceso.esCreador || acceso.puede_gestionar"
                   class="btn-mini"
@@ -99,7 +93,6 @@
                 </button>
               </div>
             </div>
-            <!-- Archivos -->
             <div class="archivo-fila" v-for="a in archivos" :key="a.id">
               <span>{{ iconoArchivo(a.tipo) }} {{ a.nombre }}</span>
               <div style="display:flex;gap:0.5rem;align-items:center;">
@@ -191,7 +184,6 @@
         <h3>🔑 Permisos: {{ carpetaPermisos?.nombre }}</h3>
         <p class="modal-sub">Permisos específicos por usuario para esta carpeta. Sobreescriben los permisos generales de la bóveda.</p>
 
-        <!-- Asignar nuevo permiso -->
         <div class="permiso-form">
           <input v-model="nuevoPermiso.identificador" type="text" placeholder="Usuario o email" />
           <div class="permisos-check">
@@ -205,7 +197,6 @@
           </button>
         </div>
 
-        <!-- Lista de permisos actuales -->
         <div v-if="listaPermisosCarpeta.length > 0" class="lista-permisos-carpeta">
           <p class="permiso-sub-label">Permisos personalizados activos:</p>
           <div class="permiso-fila" v-for="p in listaPermisosCarpeta" :key="p.usuario_id">
@@ -233,7 +224,7 @@
 </template>
 
 <script>
-const API = 'https://backend-opendrive.apps-crc.testing';
+import { apiGet, apiPost, apiPatch, apiDelete, apiUpload, API } from '../api'
 
 export default {
   data() {
@@ -245,19 +236,17 @@ export default {
       archivos: [],
       carpetas: [],
       carpetaActualId: null,
-      accesoCarpetaActual: null,  // permisos efectivos dentro de la carpeta actual (null = usar acceso de bóveda)
+      accesoCarpetaActual: null,
       breadcrumb: [],
       miembros: [],
       errorArchivo: '',
       errorInvitar: '',
       invitando: false,
       invitar: { identificador: '', puede_leer: true, puede_subir: false, puede_borrar: false, puede_gestionar: false },
-      // Modal carpeta
       mostrarModalCarpeta: false,
       creandoCarpeta: false,
       nombreNuevaCarpeta: '',
       errorCarpeta: '',
-      // Modal permisos de carpeta
       mostrarModalPermisos: false,
       carpetaPermisos: null,
       listaPermisosCarpeta: [],
@@ -267,298 +256,275 @@ export default {
     }
   },
   computed: {
-    // Permisos efectivos: si estamos dentro de una carpeta usa accesoCarpetaActual, si no el de la bóveda
     accesoEfectivo() {
       return this.carpetaActualId && this.accesoCarpetaActual
         ? this.accesoCarpetaActual
-        : (this.acceso || {});
+        : (this.acceso || {})
     },
     porcentaje() {
-      if (!this.boveda?.espacio_total_bytes) return 0;
-      return Math.min(this.boveda.espacio_usado_bytes / this.boveda.espacio_total_bytes * 100, 100).toFixed(1);
+      if (!this.boveda?.espacio_total_bytes) return 0
+      return Math.min(this.boveda.espacio_usado_bytes / this.boveda.espacio_total_bytes * 100, 100).toFixed(1)
     },
     colorEspacio() {
-      if (this.porcentaje >= 90) return '#ef4444';
-      if (this.porcentaje >= 70) return '#f59e0b';
-      return '#3b82f6';
+      if (this.porcentaje >= 90) return '#ef4444'
+      if (this.porcentaje >= 70) return '#f59e0b'
+      return '#3b82f6'
     },
-    usadoMB() { return this.boveda ? (this.boveda.espacio_usado_bytes / 1048576).toFixed(1) : 0; },
-    totalMB() { return this.boveda ? (this.boveda.espacio_total_bytes / 1048576).toFixed(1) : 0; },
+    usadoMB() { return this.boveda ? (this.boveda.espacio_usado_bytes / 1048576).toFixed(1) : 0 },
+    totalMB() { return this.boveda ? (this.boveda.espacio_total_bytes / 1048576).toFixed(1) : 0 },
     permisoLabel() {
-      if (!this.acceso) return '';
-      const p = [];
-      if (this.acceso.puede_leer) p.push('👁️ Leer');
-      if (this.acceso.puede_subir) p.push('⬆️ Subir');
-      if (this.acceso.puede_borrar) p.push('🗑️ Borrar');
-      if (this.acceso.puede_gestionar) p.push('⚙️ Gestionar');
-      return p.join(' · ');
+      if (!this.acceso) return ''
+      const p = []
+      if (this.acceso.puede_leer) p.push('👁️ Leer')
+      if (this.acceso.puede_subir) p.push('⬆️ Subir')
+      if (this.acceso.puede_borrar) p.push('🗑️ Borrar')
+      if (this.acceso.puede_gestionar) p.push('⚙️ Gestionar')
+      return p.join(' · ')
     }
   },
   async mounted() {
-    await this.cargarBoveda();
-    await this.cargarContenido();
+    await this.cargarBoveda()
+    await this.cargarContenido()
   },
   methods: {
-    headers() {
-      return {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      };
-    },
+
     // ── Navegación carpetas ──
     irARaiz() {
-      this.carpetaActualId = null;
-      this.accesoCarpetaActual = null;
-      this.breadcrumb = [];
-      this.cargarContenido();
+      this.carpetaActualId = null
+      this.accesoCarpetaActual = null
+      this.breadcrumb = []
+      this.cargarContenido()
     },
     async entrarCarpeta(carpeta) {
-      // Verificar acceso antes de entrar
-      if (!carpeta.acceso?.puede_leer) return;
-      this.breadcrumb.push({ id: carpeta.id, nombre: carpeta.nombre });
-      this.carpetaActualId = carpeta.id;
-      this.accesoCarpetaActual = carpeta.acceso;
-      this.cargarContenido();
+      if (!carpeta.acceso?.puede_leer) return
+      this.breadcrumb.push({ id: carpeta.id, nombre: carpeta.nombre })
+      this.carpetaActualId = carpeta.id
+      this.accesoCarpetaActual = carpeta.acceso
+      this.cargarContenido()
     },
     async irACarpeta(id, nombre, index) {
-      this.breadcrumb = this.breadcrumb.slice(0, index + 1);
-      this.carpetaActualId = id;
-      // Recargar acceso de la carpeta destino
+      this.breadcrumb = this.breadcrumb.slice(0, index + 1)
+      this.carpetaActualId = id
       try {
-        const res = await fetch(`${API}/carpetas/${id}/acceso`, { headers: this.headers() });
-        this.accesoCarpetaActual = res.ok ? await res.json() : null;
-      } catch { this.accesoCarpetaActual = null; }
-      this.cargarContenido();
+        const res = await apiGet(`/carpetas/${id}/acceso`)
+        this.accesoCarpetaActual = res.ok ? await res.json() : null
+      } catch { this.accesoCarpetaActual = null }
+      this.cargarContenido()
     },
     async subirNivel() {
-      if (this.breadcrumb.length === 0) return;
-      this.breadcrumb.pop();
+      if (this.breadcrumb.length === 0) return
+      this.breadcrumb.pop()
       if (this.breadcrumb.length > 0) {
-        const crumb = this.breadcrumb[this.breadcrumb.length - 1];
-        this.carpetaActualId = crumb.id;
+        const crumb = this.breadcrumb[this.breadcrumb.length - 1]
+        this.carpetaActualId = crumb.id
         try {
-          const res = await fetch(`${API}/carpetas/${crumb.id}/acceso`, { headers: this.headers() });
-          this.accesoCarpetaActual = res.ok ? await res.json() : null;
-        } catch { this.accesoCarpetaActual = null; }
+          const res = await apiGet(`/carpetas/${crumb.id}/acceso`)
+          this.accesoCarpetaActual = res.ok ? await res.json() : null
+        } catch { this.accesoCarpetaActual = null }
       } else {
-        this.carpetaActualId = null;
-        this.accesoCarpetaActual = null;
+        this.carpetaActualId = null
+        this.accesoCarpetaActual = null
       }
-      this.cargarContenido();
+      this.cargarContenido()
     },
 
     // ── Carga de datos ──
     async cargarBoveda() {
       try {
-        const res = await fetch(`${API}/bovedas/${this.$route.params.id}`, { headers: this.headers() });
-        if (!res.ok) { this.boveda = null; return; }
-        const data = await res.json();
-        this.boveda = data;
-        this.acceso = data.acceso;
-      } catch (err) { console.error(err); }
-      finally { this.cargando = false; }
+        const res = await apiGet(`/bovedas/${this.$route.params.id}`)
+        if (!res.ok) { this.boveda = null; return }
+        const data = await res.json()
+        this.boveda = data
+        this.acceso = data.acceso
+      } catch (err) { console.error(err) }
+      finally { this.cargando = false }
     },
     async cargarContenido() {
-      await Promise.all([this.cargarCarpetas(), this.cargarArchivos()]);
+      await Promise.all([this.cargarCarpetas(), this.cargarArchivos()])
     },
     async cargarCarpetas() {
       try {
-        const params = this.carpetaActualId ? `?parent_id=${this.carpetaActualId}` : '';
-        const res = await fetch(`${API}/carpetas/boveda/${this.$route.params.id}${params}`, { headers: this.headers() });
-        if (res.ok) this.carpetas = await res.json();
-      } catch (err) { console.error(err); }
+        const params = this.carpetaActualId ? `?parent_id=${this.carpetaActualId}` : ''
+        const res = await apiGet(`/carpetas/boveda/${this.$route.params.id}${params}`)
+        if (res.ok) this.carpetas = await res.json()
+      } catch (err) { console.error(err) }
     },
     async cargarArchivos() {
       try {
-        const params = this.carpetaActualId ? `?carpeta_id=${this.carpetaActualId}` : '';
-        const res = await fetch(`${API}/bovedas/${this.$route.params.id}/archivos${params}`, { headers: this.headers() });
-        if (res.ok) this.archivos = await res.json();
-      } catch (err) { console.error(err); }
+        const params = this.carpetaActualId ? `?carpeta_id=${this.carpetaActualId}` : ''
+        const res = await apiGet(`/bovedas/${this.$route.params.id}/archivos${params}`)
+        if (res.ok) this.archivos = await res.json()
+      } catch (err) { console.error(err) }
     },
     async cargarMiembros() {
       try {
-        const res = await fetch(`${API}/bovedas/${this.$route.params.id}/miembros`, { headers: this.headers() });
-        if (res.ok) this.miembros = await res.json();
-      } catch (err) { console.error(err); }
+        const res = await apiGet(`/bovedas/${this.$route.params.id}/miembros`)
+        if (res.ok) this.miembros = await res.json()
+      } catch (err) { console.error(err) }
     },
 
     // ── Carpetas ──
     cerrarModalCarpeta() {
-      this.mostrarModalCarpeta = false;
-      this.nombreNuevaCarpeta = '';
-      this.errorCarpeta = '';
+      this.mostrarModalCarpeta = false
+      this.nombreNuevaCarpeta = ''
+      this.errorCarpeta = ''
     },
     async crearCarpeta() {
-      this.errorCarpeta = '';
-      if (!this.nombreNuevaCarpeta.trim()) { this.errorCarpeta = 'El nombre es obligatorio'; return; }
-      this.creandoCarpeta = true;
+      this.errorCarpeta = ''
+      if (!this.nombreNuevaCarpeta.trim()) { this.errorCarpeta = 'El nombre es obligatorio'; return }
+      this.creandoCarpeta = true
       try {
-        const body = { nombre: this.nombreNuevaCarpeta.trim() };
-        if (this.carpetaActualId) body.parent_id = this.carpetaActualId;
-        const res = await fetch(`${API}/carpetas/boveda/${this.$route.params.id}`, {
-          method: 'POST',
-          headers: this.headers(),
-          body: JSON.stringify(body)
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        this.cerrarModalCarpeta();
-        await this.cargarCarpetas();
+        const body = { nombre: this.nombreNuevaCarpeta.trim() }
+        if (this.carpetaActualId) body.parent_id = this.carpetaActualId
+        const res = await apiPost(`/carpetas/boveda/${this.$route.params.id}`, body)
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error)
+        this.cerrarModalCarpeta()
+        await this.cargarCarpetas()
       } catch (err) {
-        this.errorCarpeta = err.message;
+        this.errorCarpeta = err.message
       } finally {
-        this.creandoCarpeta = false;
+        this.creandoCarpeta = false
       }
     },
     async eliminarCarpeta(id, nombre) {
-      if (!confirm(`¿Eliminar la carpeta "${nombre}" y todo su contenido?`)) return;
+      if (!confirm(`¿Eliminar la carpeta "${nombre}" y todo su contenido?`)) return
       try {
-        await fetch(`${API}/carpetas/boveda/${this.$route.params.id}/${id}`, { method: 'DELETE', headers: this.headers() });
-        await this.cargarContenido();
-      } catch (err) { console.error(err); }
+        await apiDelete(`/carpetas/boveda/${this.$route.params.id}/${id}`)
+        await this.cargarContenido()
+      } catch (err) { console.error(err) }
     },
 
     // ── Permisos de carpeta ──
     async abrirPermisosCarteta(carpeta) {
-      this.carpetaPermisos = carpeta;
-      this.nuevoPermiso = { identificador: '', puede_leer: true, puede_subir: false, puede_borrar: false };
-      this.errorPermisoModal = '';
-      this.mostrarModalPermisos = true;
-      await this.cargarPermisosCarpeta(carpeta.id);
+      this.carpetaPermisos = carpeta
+      this.nuevoPermiso = { identificador: '', puede_leer: true, puede_subir: false, puede_borrar: false }
+      this.errorPermisoModal = ''
+      this.mostrarModalPermisos = true
+      await this.cargarPermisosCarpeta(carpeta.id)
     },
     cerrarModalPermisos() {
-      this.mostrarModalPermisos = false;
-      this.carpetaPermisos = null;
-      this.listaPermisosCarpeta = [];
-      this.errorPermisoModal = '';
+      this.mostrarModalPermisos = false
+      this.carpetaPermisos = null
+      this.listaPermisosCarpeta = []
+      this.errorPermisoModal = ''
     },
     async cargarPermisosCarpeta(carpetaId) {
       try {
-        const res = await fetch(`${API}/carpetas/${carpetaId}/permisos`, { headers: this.headers() });
-        if (res.ok) this.listaPermisosCarpeta = await res.json();
-      } catch (err) { console.error(err); }
+        const res = await apiGet(`/carpetas/${carpetaId}/permisos`)
+        if (res.ok) this.listaPermisosCarpeta = await res.json()
+      } catch (err) { console.error(err) }
     },
     async asignarPermisoCarpeta() {
-      this.errorPermisoModal = '';
-      if (!this.nuevoPermiso.identificador) { this.errorPermisoModal = 'Indica el usuario o email'; return; }
-      this.asignandoPermiso = true;
+      this.errorPermisoModal = ''
+      if (!this.nuevoPermiso.identificador) { this.errorPermisoModal = 'Indica el usuario o email'; return }
+      this.asignandoPermiso = true
       try {
-        const res = await fetch(`${API}/carpetas/${this.carpetaPermisos.id}/permisos`, {
-          method: 'POST',
-          headers: this.headers(),
-          body: JSON.stringify(this.nuevoPermiso)
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        this.nuevoPermiso = { identificador: '', puede_leer: true, puede_subir: false, puede_borrar: false };
-        await this.cargarPermisosCarpeta(this.carpetaPermisos.id);
+        const res = await apiPost(`/carpetas/${this.carpetaPermisos.id}/permisos`, this.nuevoPermiso)
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error)
+        this.nuevoPermiso = { identificador: '', puede_leer: true, puede_subir: false, puede_borrar: false }
+        await this.cargarPermisosCarpeta(this.carpetaPermisos.id)
       } catch (err) {
-        this.errorPermisoModal = err.message;
+        this.errorPermisoModal = err.message
       } finally {
-        this.asignandoPermiso = false;
+        this.asignandoPermiso = false
       }
     },
     async revocarPermisoCarpeta(uid) {
-      if (!confirm('¿Revocar permisos personalizados de este usuario?')) return;
+      if (!confirm('¿Revocar permisos personalizados de este usuario?')) return
       try {
-        await fetch(`${API}/carpetas/${this.carpetaPermisos.id}/permisos/${uid}`, { method: 'DELETE', headers: this.headers() });
-        await this.cargarPermisosCarpeta(this.carpetaPermisos.id);
-      } catch (err) { console.error(err); }
+        await apiDelete(`/carpetas/${this.carpetaPermisos.id}/permisos/${uid}`)
+        await this.cargarPermisosCarpeta(this.carpetaPermisos.id)
+      } catch (err) { console.error(err) }
     },
 
     // ── Archivos ──
     async subirArchivo(event) {
-      this.errorArchivo = '';
-      const archivo = event.target.files[0];
-      if (!archivo) return;
-      const formData = new FormData();
-      formData.append('archivo', archivo);
-      if (this.carpetaActualId) formData.append('carpeta_id', this.carpetaActualId);
+      this.errorArchivo = ''
+      const archivo = event.target.files[0]
+      if (!archivo) return
+      const formData = new FormData()
+      formData.append('archivo', archivo)
+      if (this.carpetaActualId) formData.append('carpeta_id', this.carpetaActualId)
       try {
-        const res = await fetch(`${API}/bovedas/${this.$route.params.id}/archivos/subir`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-          body: formData
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        await this.cargarArchivos();
-        await this.cargarBoveda();
-      } catch (err) { this.errorArchivo = err.message; }
+        const res = await apiUpload(`/bovedas/${this.$route.params.id}/archivos/subir`, formData)
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error)
+        await this.cargarArchivos()
+        await this.cargarBoveda()
+      } catch (err) { this.errorArchivo = err.message }
     },
     async descargar(id, nombre) {
-      const res = await fetch(`${API}/bovedas/${this.$route.params.id}/archivos/${id}/descargar`, { headers: this.headers() });
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = nombre; a.click();
-      URL.revokeObjectURL(url);
+      const token = localStorage.getItem('token')
+      const csrfToken = sessionStorage.getItem('csrf_token')
+      const headers = { 'Authorization': `Bearer ${token}` }
+      if (csrfToken) headers['X-CSRF-Token'] = csrfToken
+
+      const res = await fetch(`${API}/bovedas/${this.$route.params.id}/archivos/${id}/descargar`, { headers })
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = nombre; a.click()
+      URL.revokeObjectURL(url)
     },
     async eliminar(id) {
-      if (!confirm('¿Eliminar este archivo de la bóveda?')) return;
-      await fetch(`${API}/bovedas/${this.$route.params.id}/archivos/${id}`, { method: 'DELETE', headers: this.headers() });
-      await this.cargarArchivos();
-      await this.cargarBoveda();
+      if (!confirm('¿Eliminar este archivo de la bóveda?')) return
+      await apiDelete(`/bovedas/${this.$route.params.id}/archivos/${id}`)
+      await this.cargarArchivos()
+      await this.cargarBoveda()
     },
 
     // ── Miembros ──
     async invitarMiembro() {
-      this.errorInvitar = '';
-      if (!this.invitar.identificador) { this.errorInvitar = 'Introduce un usuario o email'; return; }
-      this.invitando = true;
+      this.errorInvitar = ''
+      if (!this.invitar.identificador) { this.errorInvitar = 'Introduce un usuario o email'; return }
+      this.invitando = true
       try {
-        const res = await fetch(`${API}/bovedas/${this.$route.params.id}/miembros`, {
-          method: 'POST',
-          headers: this.headers(),
-          body: JSON.stringify(this.invitar)
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        this.invitar = { identificador: '', puede_leer: true, puede_subir: false, puede_borrar: false, puede_gestionar: false };
-        await this.cargarMiembros();
-      } catch (err) { this.errorInvitar = err.message; }
-      finally { this.invitando = false; }
+        const res = await apiPost(`/bovedas/${this.$route.params.id}/miembros`, this.invitar)
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error)
+        this.invitar = { identificador: '', puede_leer: true, puede_subir: false, puede_borrar: false, puede_gestionar: false }
+        await this.cargarMiembros()
+      } catch (err) { this.errorInvitar = err.message }
+      finally { this.invitando = false }
     },
     async editarPermiso(miembro, campo, valor) {
       try {
-        await fetch(`${API}/bovedas/${this.$route.params.id}/miembros/${miembro.usuario_id}/permisos`, {
-          method: 'PATCH',
-          headers: this.headers(),
-          body: JSON.stringify({ [campo]: valor })
-        });
-        miembro[campo] = valor;
-      } catch (err) { console.error(err); }
+        await apiPatch(`/bovedas/${this.$route.params.id}/miembros/${miembro.usuario_id}/permisos`, { [campo]: valor })
+        miembro[campo] = valor
+      } catch (err) { console.error(err) }
     },
     async revocarAcceso(miembro) {
-      if (!confirm(`¿Revocar acceso a ${miembro.username}?`)) return;
+      if (!confirm(`¿Revocar acceso a ${miembro.username}?`)) return
       try {
-        await fetch(`${API}/bovedas/${this.$route.params.id}/miembros/${miembro.usuario_id}`, { method: 'DELETE', headers: this.headers() });
-        await this.cargarMiembros();
-      } catch (err) { console.error(err); }
+        await apiDelete(`/bovedas/${this.$route.params.id}/miembros/${miembro.usuario_id}`)
+        await this.cargarMiembros()
+      } catch (err) { console.error(err) }
     },
     async eliminarBoveda() {
-      if (!confirm('¿Eliminar esta bóveda? Se perderán todos sus archivos y se recuperará el espacio.')) return;
+      if (!confirm('¿Eliminar esta bóveda? Se perderán todos sus archivos y se recuperará el espacio.')) return
       try {
-        const res = await fetch(`${API}/bovedas/${this.$route.params.id}`, { method: 'DELETE', headers: this.headers() });
-        if (res.ok) this.$router.push('/dashboard');
-      } catch (err) { console.error(err); }
+        const res = await apiDelete(`/bovedas/${this.$route.params.id}`)
+        if (res.ok) this.$router.push('/dashboard')
+      } catch (err) { console.error(err) }
     },
 
     iconoArchivo(tipo) {
-      if (!tipo) return '📁';
-      if (tipo.includes('pdf')) return '📄';
-      if (tipo.includes('image')) return '🖼️';
-      if (tipo.includes('video')) return '🎬';
-      if (tipo.includes('audio')) return '🎵';
-      if (tipo.includes('zip') || tipo.includes('compressed')) return '📦';
-      if (tipo.includes('word') || tipo.includes('document')) return '📝';
-      return '📁';
+      if (!tipo) return '📁'
+      if (tipo.includes('pdf')) return '📄'
+      if (tipo.includes('image')) return '🖼️'
+      if (tipo.includes('video')) return '🎬'
+      if (tipo.includes('audio')) return '🎵'
+      if (tipo.includes('zip') || tipo.includes('compressed')) return '📦'
+      if (tipo.includes('word') || tipo.includes('document')) return '📝'
+      return '📁'
     }
   },
   watch: {
     tab(val) {
-      if (val === 'miembros') this.cargarMiembros();
-      if (val === 'archivos') this.cargarContenido();
+      if (val === 'miembros') this.cargarMiembros()
+      if (val === 'archivos') this.cargarContenido()
     }
   }
 }
@@ -597,7 +563,6 @@ export default {
 .main-header h2 { color: #e2e8f0; font-size: 1.5rem; }
 .header-acciones { display: flex; gap: 0.75rem; flex-shrink: 0; align-items: center; }
 
-/* Breadcrumb */
 .breadcrumb { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
 .breadcrumb-item {
   font-size: 0.82rem; color: #60a5fa; cursor: pointer;
@@ -608,7 +573,6 @@ export default {
 .breadcrumb-actual:hover { background: transparent; }
 .breadcrumb-sep { color: #475569; font-size: 0.9rem; }
 
-/* Botón volver */
 .btn-volver-wrap { margin-bottom: 1rem; }
 .btn-volver {
   background: #334155; color: #94a3b8; border: none; border-radius: 8px;
@@ -638,7 +602,6 @@ export default {
 .btn-mini { padding: 0.25rem 0.5rem; font-size: 0.75rem; border-radius: 6px; background: #334155; border: none; cursor: pointer; color: white; }
 .btn-mini-danger { background: #7f1d1d; }
 
-/* Invitar miembros */
 .invitar-box {
   background: #1e293b; border: 1px solid #334155; border-radius: 10px;
   padding: 1.25rem; margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem;
@@ -653,7 +616,6 @@ export default {
 .btn-invitar { background: #3b82f6; color: white; border: none; border-radius: 8px; padding: 0.6rem 1.25rem; cursor: pointer; font-size: 0.9rem; align-self: flex-start; }
 .btn-invitar:disabled { opacity: 0.6; cursor: not-allowed; }
 
-/* Miembros */
 .lista-miembros { display: flex; flex-direction: column; gap: 0.5rem; }
 .miembro-fila {
   display: flex; align-items: center; gap: 1rem;
@@ -666,7 +628,6 @@ export default {
 .miembro-permisos label { display: flex; align-items: center; gap: 0.25rem; font-size: 0.85rem; color: #94a3b8; cursor: pointer; }
 .btn-revocar { background: #7f1d1d; color: white; border: none; border-radius: 6px; padding: 0.3rem 0.75rem; font-size: 0.8rem; cursor: pointer; }
 
-/* Zona peligro */
 .zona-peligro {
   margin-top: 2.5rem; border: 1px solid #7f1d1d; border-radius: 10px;
   padding: 1.25rem; background: #1c0a0a;
@@ -677,7 +638,6 @@ export default {
 
 .vacio { text-align: center; color: #475569; padding: 4rem 2rem; font-size: 1rem; line-height: 2; }
 
-/* Modales */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.6);
   display: flex; align-items: center; justify-content: center; z-index: 100;
@@ -700,7 +660,6 @@ export default {
 .btn-crear { background: #3b82f6; border: none; border-radius: 8px; padding: 0.6rem 1rem; color: white; cursor: pointer; }
 .btn-crear:disabled { opacity: 0.6; cursor: not-allowed; }
 
-/* Permisos carpeta */
 .permiso-form { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 1rem; display: flex; flex-direction: column; gap: 0.6rem; }
 .lista-permisos-carpeta { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
 .permiso-sub-label { font-size: 0.78rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
