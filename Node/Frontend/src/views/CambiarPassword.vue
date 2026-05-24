@@ -14,22 +14,6 @@
   </div>
 </template>
 
-<template>
-  <div class="auth-page">
-    <div class="form-box">
-      <h2>🔒 Cambio de contraseña obligatorio</h2>
-      <p class="aviso">Un administrador ha requerido que cambies tu contraseña antes de continuar.</p>
-      <input v-model="passwordActual" type="password" placeholder="Contraseña actual" />
-      <input v-model="passwordNueva" type="password" placeholder="Nueva contraseña" />
-      <input v-model="passwordConfirm" type="password" placeholder="Confirmar nueva contraseña" />
-      <p class="hint">Mínimo 8 caracteres, mayúscula, minúscula, número y carácter especial</p>
-      <button @click="cambiar">Cambiar contraseña</button>
-      <p v-if="error" class="error">{{ error }}</p>
-      <p v-if="success" class="success">{{ success }}</p>
-    </div>
-  </div>
-</template>
-
 <script>
 import { apiPost } from '../api'
 
