@@ -1,17 +1,6 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: deny-all
-  namespace: opendrive
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
-    - Egress
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: frontend-policy
   namespace: opendrive
 spec:
@@ -38,11 +27,18 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: openshift-dns
+          podSelector:
+            matchLabels:
+              dns.operator.openshift.io/daemonset-dns: default
       ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
           port: 53
+        - protocol: UDP
+          port: 5353
+        - protocol: TCP
+          port: 5353
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -90,11 +86,18 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: openshift-dns
+          podSelector:
+            matchLabels:
+              dns.operator.openshift.io/daemonset-dns: default
       ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
           port: 53
+        - protocol: UDP
+          port: 5353
+        - protocol: TCP
+          port: 5353
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -121,11 +124,18 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: openshift-dns
+          podSelector:
+            matchLabels:
+              dns.operator.openshift.io/daemonset-dns: default
       ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
           port: 53
+        - protocol: UDP
+          port: 5353
+        - protocol: TCP
+          port: 5353
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -152,9 +162,15 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: openshift-dns
+          podSelector:
+            matchLabels:
+              dns.operator.openshift.io/daemonset-dns: default
       ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
           port: 53
----
+        - protocol: UDP
+          port: 5353
+        - protocol: TCP
+          port: 5353
