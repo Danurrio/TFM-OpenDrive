@@ -3,6 +3,9 @@ kind: Route
 metadata:
   name: backend
   namespace: opendrive
+  annotations:
+    haproxy.router.openshift.io/timeout: 120s
+    haproxy.router.openshift.io/request-body-max-size: "104857600" 
 spec:
   to:
     kind: Service

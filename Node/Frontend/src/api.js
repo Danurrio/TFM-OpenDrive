@@ -20,13 +20,12 @@ export const API = import.meta.env.VITE_API_URL || 'https://backend-opendrive.ap
 const METODOS_MUTANTES = ['POST', 'PUT', 'PATCH', 'DELETE'];
 
 /**
- * Construye los headers comunes para todas las peticiones.
- * En peticiones mutantes añade X-CSRF-Token desde sessionStorage.
+ * Construye los headers para peticiones JSON normales.
+ * NO se usa para apiUpload (multipart), que gestiona sus propios headers.
  */
-function buildHeaders(method = 'GET', extra = {}) {
+function buildHeaders(method = 'GET') {
   const headers = {
     'Content-Type': 'application/json',
-    ...extra,
   };
 
   const token = localStorage.getItem('token');
@@ -46,11 +45,34 @@ function buildHeaders(method = 'GET', extra = {}) {
 
 /**
  * Fetch base con manejo de sesión expirada.
- * Si el servidor responde 401 o 403 por token inválido, redirige al login.
+ * Si se pasan options.headers propios (como en apiUpload),
+ * se usan tal cual sin sobreescribir con Content-Type: application/json.
  */
 async function apiFetch(path, options = {}) {
   const method = options.method || 'GET';
-  const headers = buildHeaders(method, options.headers || {});
+
+  let headers;
+
+  if (options.headers) {
+    // Headers ya construidos externamente (ej: apiUpload sin Content-Type)
+    // Solo añadimos Auth y CSRF si no están ya presentes
+    headers = { ...options.headers };
+
+    const token = localStorage.getItem('token');
+    if (token && !headers['Authorization']) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    if (METODOS_MUTANTES.includes(method.toUpperCase()) && !headers['X-CSRF-Token']) {
+      const csrfToken = sessionStorage.getItem('csrf_token');
+      if (csrfToken) {
+        headers['X-CSRF-Token'] = csrfToken;
+      }
+    }
+  } else {
+    // Petición JSON normal — construir headers completos
+    headers = buildHeaders(method);
+  }
 
   const response = await fetch(`${API}${path}`, {
     ...options,
@@ -101,19 +123,20 @@ export async function apiDelete(path) {
 
 /**
  * Para subida de archivos con FormData.
- * No se pone Content-Type: el navegador lo gestiona automáticamente con el boundary correcto.
+ * NO se pone Content-Type: el navegador lo gestiona automáticamente
+ * con el boundary correcto para multipart/form-data.
  */
 export async function apiUpload(path, formData) {
-  const method = 'POST';
   const token = localStorage.getItem('token');
   const csrfToken = sessionStorage.getItem('csrf_token');
 
   const headers = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+  // Content-Type NO se pone aquí — el navegador lo añade solo con el boundary
 
   return apiFetch(path, {
-    method,
+    method: 'POST',
     headers,
     body: formData,
   });
