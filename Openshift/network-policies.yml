@@ -27,7 +27,6 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: openshift-ingress
   egress:
-    # Permitir hablar con el backend
     - to:
         - podSelector:
             matchLabels:
@@ -35,7 +34,6 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
-    # Permitir DNS — sin esto ninguna resolución de nombre funciona
     - to:
         - namespaceSelector:
             matchLabels:
