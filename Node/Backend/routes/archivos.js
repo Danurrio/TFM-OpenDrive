@@ -128,7 +128,7 @@ router.get('/descargar/:id', verificarToken, async (req, res) => {
 // ── POST mutantes — requieren CSRF ────────────────────────────────────────────
 
 // Subir archivo personal
-router.post('/subir', verificarToken, verificarCsrf, upload.single('archivo'), async (req, res) => {
+router.post('/subir', verificarToken, upload.single('archivo'), verificarCsrf, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se ha enviado ningún archivo' });
 
   const { originalname, mimetype, buffer, size } = req.file;
